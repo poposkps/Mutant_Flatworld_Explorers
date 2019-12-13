@@ -1,0 +1,587 @@
+#include <iostream>
+#include <string>
+#include <vector>
+#include <set>
+#include <assert.h>
+#include <memory>
+#ifndef ONLINE_JUDGE
+#include <boost/assert.hpp>
+#include <sstream>
+#endif
+
+
+enum Orientation
+{
+    EAST,
+    SOUTH,
+    WEAT,
+    NORTH
+};
+
+struct Position
+{
+    Position() : x_(0), y_(0){}
+    bool operator == (const Position rhs) const
+    {
+        return x_ == rhs.x_
+            && y_ == rhs.y_;
+    }
+    bool operator != (const Position rhs) const
+    {
+        return !(*this == rhs);
+    }
+    bool operator < (const Position & rhs) const
+    {
+        if (x_ != rhs.x_)
+        {
+            return x_ < rhs.x_;
+        }
+        return y_ < rhs.y_;
+    }
+    int x_;
+    int y_;
+};
+
+struct RobotStatus
+{
+    RobotStatus() : orientation_(EAST) {}
+    Position pos_;
+    Orientation orientation_;
+};
+
+class RobotCommand
+{
+public:
+    typedef std::shared_ptr<RobotCommand> shared_ptr_t;
+public:
+    virtual ~RobotCommand(){}
+public:
+    virtual RobotStatus execute(const RobotStatus & status) = 0;
+};
+typedef std::vector<RobotCommand::shared_ptr_t> commands_t;
+
+class TurnLeftCommand : public RobotCommand
+{
+public:
+    virtual RobotStatus execute(const RobotStatus & status)
+    {
+        RobotStatus result = status;
+        switch (status.orientation_)
+        {
+        case EAST: result.orientation_ = NORTH;
+            break;
+        case SOUTH: result.orientation_ = EAST;
+            break;
+        case WEAT: result.orientation_ = SOUTH;
+            break;
+        case NORTH: result.orientation_ = WEAT;
+            break;
+        default:
+            assert(false);
+        }
+        return result;
+    }
+};
+
+class TurnRightCommand : public RobotCommand
+{
+public:
+    virtual RobotStatus execute(const RobotStatus & status)
+    {
+        RobotStatus result = status;
+        switch (status.orientation_)
+        {
+        case EAST: result.orientation_ = SOUTH;
+            break;
+        case SOUTH: result.orientation_ = WEAT;
+            break;
+        case WEAT: result.orientation_ = NORTH;
+            break;
+        case NORTH: result.orientation_ = EAST;
+            break;
+        default:
+            assert(false);
+        }
+        return result;
+    }
+};
+
+class MoveForwardCommand : public RobotCommand
+{
+public:
+    virtual RobotStatus execute(const RobotStatus & status)
+    {
+        RobotStatus result = status;
+        switch (status.orientation_)
+        {
+        case EAST: result.pos_.x_++;
+            break;
+        case SOUTH: result.pos_.y_--;
+            break;
+        case WEAT: result.pos_.x_--;
+            break;
+        case NORTH: result.pos_.y_++;
+            break;
+        default:
+            assert(false);
+        }
+        return result;
+    }
+};
+
+
+typedef std::set<Position> scents_t;
+
+class falled_error : std::runtime_error
+{
+public:
+    falled_error(const RobotStatus & status)
+        : std::runtime_error("fall !")
+        , status_(status)
+    {
+
+    }
+    RobotStatus status() const { return status_; }
+
+private:
+    RobotStatus status_;
+};
+
+RobotStatus robot_go(const RobotStatus & start, const commands_t & commands, const scents_t & scents_on_map, int width, int height)
+{
+    RobotStatus current = start;
+    for (const auto & command : commands)
+    {
+        RobotStatus next = command->execute(current);
+
+        if (next.pos_.x_ < 0 || next.pos_.x_ > width
+            || next.pos_.y_ < 0 || next.pos_.y_ > height)
+        {
+            if (scents_on_map.find(current.pos_) == scents_on_map.end())
+            {
+                throw falled_error(current);
+            }
+            else
+            {
+                continue;
+            }
+        }
+        else
+        {
+            current = next;
+        }
+    }
+    return current;
+}
+
+Orientation parse_orientation(char o)
+{
+    if (o == 'E') return EAST;
+    if (o == 'S') return SOUTH;
+    if (o == 'W') return WEAT;
+    if (o == 'N') return NORTH;
+    assert(false);
+    return EAST;
+}
+
+commands_t parse_commands(const std::string & str)
+{
+    commands_t result;
+    for (size_t i = 0 ; i < str.size() ; ++i)
+    {
+        if (str[i] == 'L')
+            result.push_back(std::make_shared<TurnLeftCommand>());
+        else if (str[i] == 'R')
+            result.push_back(std::make_shared<TurnRightCommand>());
+        else if (str[i] == 'F')
+            result.push_back(std::make_shared<MoveForwardCommand>());
+        else
+            assert(false);
+    }
+    return result;
+}
+
+void print_status(std::ostream & out, const RobotStatus & status)
+{
+    out << status.pos_.x_ << " " << status.pos_.y_ << " ";
+    switch (status.orientation_)
+    {
+    case EAST:
+        out << "E";
+        break;
+    case SOUTH:
+        out << "S";
+        break;
+    case WEAT:
+        out << "W";
+        break;
+    case NORTH:
+        out << "N";
+        break;
+    default:
+        assert(false);
+    }
+}
+
+void run(std::istream & in, std::ostream & out)
+{
+    std::string line;
+
+    int width(0), height(0);
+    std::getline(in, line);
+    std::sscanf(line.c_str(), "%d %d", &width, &height);
+
+    scents_t scents_on_map;
+
+    while (std::getline(in, line))
+    {
+        RobotStatus start;
+        char char_orientation;
+        std::sscanf(line.c_str(), "%d %d %c", &start.pos_.x_, &start.pos_.y_, &char_orientation);
+        start.orientation_ = parse_orientation(char_orientation);
+
+        std::string str_path;
+        std::getline(in, str_path);
+        commands_t commands = parse_commands(str_path);
+
+        try
+        {
+            RobotStatus end = robot_go(start, commands, scents_on_map, width, height);
+            print_status(out, end);
+            out << std::endl;
+        }
+        catch (const falled_error & e)
+        {
+            scents_on_map.insert(e.status().pos_);
+            print_status(out, e.status());
+            out << " LOST" <<std::endl;
+        }
+    }
+    
+}
+
+#ifdef ONLINE_JUDGE
+
+int main(int argc, char** argv)
+{
+    run(std::cin, std::cout);
+    return 0;
+}
+
+#else
+
+const std::string question = R"StringLiteral(20 20
+5 11 E
+FFFRFLFFFLFFRFRRFLR
+15 7 S
+RRLRRLLLLLLLLLLFRRRFFFRRLRL
+4 17 N
+LFRRLRRLLFLRRFFRFRLL
+18 7 W
+LFLRRRRRFFLLRFFFR
+7 3 W
+LLFRFFRRRLRFLFRFRRL
+9 7 E
+FLLRFRFFRRLLLLRRLLLFRFRRRRFLLLLRFLFFFRF
+0 20 N
+LFFFLFFLRLLFRRFRRLRFLLF
+1 4 W
+RRFRLFLFLR
+5 4 S
+LRFLFRFFFL
+16 7 S
+LFFRFFRLRFFRFL
+9 4 S
+FLRRLLLRLFFLLFR
+5 19 E
+RRLLRRLFLLFLLRFFLRLRRLFRLFLFFLRLLFRRRF
+4 5 N
+LLFRLRRLRLFLLRFRRRRLFRLF
+7 12 N
+RLFFFLRLLRFRLRLR
+8 16 S
+RFLFFRLLRFFLLL
+6 7 N
+LLLFLLRFFFLFLLRF
+4 9 S
+RLRLFFFRRLRLLLRFLLRRRRLRRRR
+3 18 S
+RLLFRFRFRLFRFFLFFRRRLRLLRRRFFRRRRLRF
+9 9 N
+LLFLRLLLLLFRFFRLRL
+16 11 W
+LFFFLLLRRFRLFLRLFFFLRRFFLLFRRFRF
+3 17 N
+LLLRRFFFLLLFL
+18 3 S
+FLLFRLFRFR
+3 1 W
+LFRFRRFFLLRFRLLFRRRLFRLRFRRLFLLRRRF
+1 5 N
+FLLLLFRFFLRRLRLRRLF
+19 18 W
+RLLRLFFFLRFRFFLFRLFLRFRFRFLFRLFFL
+12 5 S
+LLRRFFRRLFLLRRRFRFLFRLLFLFRRFLFRLFRRRFL
+12 10 W
+RFLFRFFLFLFFFFLF
+3 12 N
+RRLRLFFRRFFLLLFFRFFLLLRRLL
+9 11 W
+FLRFFRRRLFLFFFLLLL
+5 18 N
+LLFRRFRRFRRFLFLRFFRRLLLRFLRLRRFRRLRRLL
+17 2 N
+LRFRRFFFLFFLLLRRLRFRLRLR
+5 7 W
+FRFRRLLRRL
+16 16 N
+RRRLFRLFRLLFFFRFFLFRLFLFFFFRF
+3 6 W
+RRFRRFLFRFLFRLLFFR
+20 11 N
+LRRFLFFFRFRFLRFFLLRLLLFRRFRLRR
+13 18 S
+FRRLFRLFLFFRRRLRLRFRFF
+3 3 S
+FFLFFFRLLRRRF
+11 17 W
+LLFRLFRFLLRRLLRRLLLLLFFF
+8 17 W
+LLFRFFLFFFLRFRFLLLRF
+18 12 S
+LLFLFRLFLFLRLF
+18 11 W
+RRFFLRRRFLFLLLRLFFRFLRLRFRFRFLRF
+14 15 E
+RRFLFLFRRLFFFLRRRFFFRFFFRRLFFRRFRLRL
+17 20 W
+LRRRFFFLFRRRRRFLRRR
+2 17 N
+LRRRFFFLFR
+20 10 W
+LRRRRLFRFRLLLRRRRR
+13 8 E
+RRFRLFFLRRFRLLRFFLRFRR
+5 14 S
+FFRFRFFRFLRLFLFRLLF
+8 10 W
+FFLFLRRFFRFFFRFLLRLRFFFFRFFRRFFFRRLFLL
+19 1 N
+FFFRFLFLLFRFRRRLFLRRRRFRRRFFLFRLRRLLLFF
+4 17 E
+LFFRRRLLLFRRFRLLRLFRRRRLRFLLRFFRRFLFF
+13 0 E
+FLLLFLLRRRR
+0 4 S
+LRLFRLRLFRFFLRLRFFFFLRRLLLFFFFL
+13 1 W
+LRLRFLRRFLFRLRFFRLRLLRFRLFLRFLLFRRR
+1 10 W
+RFRRRRLFRFFLRLFLFRFRFFRRLLFLFL
+6 9 E
+LRLLLFLLRRFFRFRRRFRRLRFRRRFFRRFRL
+13 10 E
+LRRRFLFLRLFRFRRRFRL
+6 9 E
+RLLRFRLLRL
+14 1 S
+FLLRRFLFRLLFFLRLFRFFRLLRFLLFFRRLFRRFF
+12 15 E
+LRLLRFRFFLLRRRRRRRRLRFLFFLFLR
+2 20 E
+RLRRRFLLFRFRFFF
+7 15 E
+RLLRLLRRLLFFRLFLLRLRLFLFFFRRRFLRF
+16 3 N
+RRRRFLRFLRFFRRRFFLFRFLRRFLFFLL
+2 12 S
+RFFFLLRRLRFRLFRFLLRR
+7 1 N
+RLLFLLLLLFLRLRLLFLFFLFRRLLFFLRLR
+14 19 W
+LFRFRLFLLRFLFLFRRFFFLRRFR
+1 17 W
+FLRLFRRFRFLFLFLRRLLRR
+20 15 S
+FLLLFLLRFRLFFFLFLLLL
+10 7 W
+LLFLFFFFFRRLRLFLRFLLLF
+11 19 W
+RRRFFLFFRFLRRLRLLFLFLL
+19 3 W
+FLFFRRLRRRFFRLRFRLRFLLFRLRRRFFRRLLRRRF
+8 2 W
+FFLLRLLFLRRFLLFFFRRFRFRFRLLLRLRL
+14 13 N
+RLRRFFLFFLLFRRFRFRRRLLLRLL
+2 8 S
+LFFFRFRFRLLLRLRRRL
+4 18 N
+LFRRFLLRFFFRLLFRLFLLLLLLLRFFRLFLFFFLLLF
+20 17 E
+LFLLFFLLRLLRFLFFFFLRFFRFLRRRLLRLR
+8 15 S
+LRLFLFRLFLRRFRLFFRLLLRRLFFRRLF
+10 8 W
+LLLLRFFFRRRLFRFRRRFFRFRFFLRRFFFLRFFR
+4 4 S
+LLRRLLFLFRLFFRRRLRLLLRLRFLR
+12 7 S
+FLRFLLFLRFFFLRLRFL
+5 3 N
+RLFLRLFRLRLLFL
+0 2 S
+LRLLFFFLRRRFLFFLRFLFLRFRRFRLLFL
+5 4 E
+RRFFRRLLFFRRLRRLLFRLFLLLLRR
+11 16 S
+FFLFRRFLFRRFFLFRLFRFLF
+16 13 N
+RFLFRLFFLLLFFRLLFLFRFFLFFFL
+1 8 N
+FRLRRRFFLLFL
+8 10 E
+LLFRFLFFRRLFRLFFLRRLFRRRLR
+18 20 W
+LRFFFRFRFFRFLFLFFLLRLRRLFFFLLRRF
+3 6 E
+LRRRLLFLFFLFRFLFRFRRLLL
+20 2 N
+RFRLLRLFRFFRRLFRLFLRLLLFRRF
+11 9 N
+FFLLLFLLLLRLRLRLFL
+1 0 S
+RRLRRFLLLFLFRF
+15 5 N
+LFLLRFFLFFFFFRFFRRLRL
+0 9 E
+FLRRRLRLFFFFLRLRFFLLRFRLLLLLFLLRLLLR
+11 6 E
+LFFFFFRLFLRLLRFF
+20 13 N
+FLFLFFFRLLLLRLLRFLFRLFFFLRRRFLFFLFRLF
+3 6 W
+FRLLRFRLFLFRRRF
+7 7 W
+RRRFLFLLFFRRRLRL
+4 7 W
+RRFFLLRRFRLRLLLLLLLLFFRRLLFFRLL
+17 0 S
+LLFRRRFRRFRFRLLFFFLRFFLRRLRF
+10 12 S
+FFRFFLFFRFLFLLFRFRRLFFLLFRRRFR)StringLiteral";
+
+const std::string answser = R"StringLiteral(11 12 W
+14 4 W
+5 17 E
+20 4 E LOST
+10 2 S
+7 9 N
+0 20 W LOST
+3 5 N
+6 0 E
+16 6 W
+9 4 W
+0 18 W
+5 3 E
+6 15 N
+7 12 W
+6 9 S
+4 5 W
+0 19 W LOST
+10 6 S
+20 10 S
+0 18 W
+19 4 S
+3 1 N
+3 6 S
+13 12 S
+9 4 E
+11 9 E
+5 14 S
+7 14 N
+1 19 E
+19 1 E
+4 8 E
+20 12 E LOST
+4 4 S
+20 11 E LOST
+12 13 S
+5 1 W
+16 16 E
+13 15 N
+17 12 E
+18 10 S
+17 13 N
+20 20 N LOST
+3 14 S
+20 10 E LOST
+10 12 S
+4 14 S
+4 17 S
+20 4 E
+6 20 N LOST
+14 0 S LOST
+2 0 S LOST
+11 6 E
+0 13 W LOST
+4 6 E
+14 8 E
+7 9 N
+15 3 E
+14 14 E
+2 20 N LOST
+3 18 W
+11 7 E
+0 12 W LOST
+4 0 S LOST
+12 15 N
+0 18 N
+20 10 E
+13 11 S
+14 17 S
+18 0 S LOST
+4 2 E
+16 10 E
+4 7 W
+4 20 N LOST
+14 18 E
+13 19 E
+13 10 S
+1 6 N
+12 10 W
+4 3 E
+4 5 N
+1 6 S
+8 16 W
+15 19 S
+0 9 W LOST
+5 15 W
+15 20 N LOST
+2 10 W
+20 2 E LOST
+13 11 N
+3 0 S LOST
+19 1 W
+3 3 S
+9 12 W
+16 6 S
+1 5 E
+6 6 E
+7 3 E
+20 0 E LOST
+7 7 N
+)StringLiteral";
+
+int main(int argc, char** argv)
+{
+    std::istringstream stream_in(question);
+    std::stringstream stream_out;
+    run(stream_in, stream_out);
+
+    std::string my_answer = stream_out.str();
+    BOOST_ASSERT(my_answer == answser);
+    return 0;
+}
+#endif
